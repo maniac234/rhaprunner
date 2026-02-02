@@ -1,0 +1,2168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RHAP Rhythm Runner</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            overflow: hidden;
+            background: #1a1a0a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(ellipse at center, rgba(40, 35, 10, 0.95) 0%, rgba(15, 15, 5, 0.98) 100%);
+            z-index: 100;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .title {
+            font-size: clamp(2rem, 10vw, 5rem);
+            font-weight: 900;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #fbbf24 100%);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 3s ease infinite;
+            text-shadow: 0 0 60px rgba(251, 191, 36, 0.5);
+            margin-bottom: 0.5rem;
+            letter-spacing: 0.1em;
+            text-align: center;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            font-size: clamp(0.8rem, 4vw, 1.5rem);
+            color: #fcd34d;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            opacity: 0.8;
+            text-align: center;
+        }
+
+        .total-points {
+            font-size: clamp(1.2rem, 5vw, 2rem);
+            color: #fbbf24;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .total-points span {
+            font-size: clamp(1.5rem, 6vw, 2.5rem);
+        }
+
+        .btn {
+            padding: clamp(0.8rem, 3vw, 1.2rem) clamp(2rem, 8vw, 4rem);
+            font-size: clamp(1rem, 4vw, 1.3rem);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #eab308 100%);
+            color: #1a1a0a;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.4), 0 0 60px rgba(245, 158, 11, 0.2);
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0.3rem;
+        }
+
+        .btn:hover, .btn:active {
+            transform: scale(1.05);
+            box-shadow: 0 0 50px rgba(251, 191, 36, 0.6), 0 0 100px rgba(245, 158, 11, 0.4);
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transform: rotate(45deg);
+            animation: shimmer 2s infinite;
+        }
+
+        .btn.small {
+            padding: clamp(0.5rem, 2vw, 0.8rem) clamp(1.2rem, 5vw, 2rem);
+            font-size: clamp(0.7rem, 2.5vw, 0.9rem);
+        }
+
+        .btn.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 50%, #111827 100%);
+            color: #fcd34d;
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.2);
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
+        }
+
+        .menu-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            max-width: 400px;
+        }
+
+        .instructions {
+            margin-top: 1rem;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: clamp(0.65rem, 2vw, 0.85rem);
+            text-align: center;
+            line-height: 1.6;
+            max-width: 90%;
+        }
+
+        .instructions span {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            padding: 1rem;
+        }
+
+        .modal.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, #1a1a0a 0%, #2a2a1a 100%);
+            border: 2px solid #fbbf24;
+            border-radius: 20px;
+            padding: clamp(1rem, 4vw, 2rem);
+            max-width: 450px;
+            width: 100%;
+            max-height: 85vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .modal-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: clamp(1.3rem, 5vw, 2rem);
+            font-weight: 700;
+            color: #fbbf24;
+            margin-bottom: 0.5rem;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: #fcd34d;
+            font-size: 1.5rem;
+            cursor: pointer;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Check-in Styles */
+        .checkin-success {
+            text-align: center;
+            color: #22c55e;
+            font-size: clamp(1rem, 3vw, 1.3rem);
+            padding: 1rem;
+        }
+
+        /* Missions Styles */
+        .mission-item {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .mission-info {
+            flex: 1;
+        }
+
+        .mission-name {
+            color: #fff;
+            font-weight: 600;
+            font-size: clamp(0.8rem, 2.5vw, 1rem);
+            margin-bottom: 0.3rem;
+        }
+
+        .mission-points {
+            color: #fbbf24;
+            font-size: clamp(0.7rem, 2vw, 0.9rem);
+            font-weight: 700;
+        }
+
+        .mission-cooldown {
+            color: #f87171;
+            font-size: clamp(0.6rem, 1.8vw, 0.75rem);
+        }
+
+        .mission-btn {
+            padding: 0.5rem 1rem;
+            font-size: clamp(0.65rem, 2vw, 0.8rem);
+            font-weight: 700;
+            text-transform: uppercase;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            color: #1a1a0a;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            min-width: 80px;
+        }
+
+        .mission-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+        }
+
+        .mission-btn.completed {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: #fff;
+        }
+
+        .mission-btn.cooldown {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        /* Ranking Styles */
+        .ranking-list {
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .ranking-item {
+            display: flex;
+            align-items: center;
+            padding: 0.8rem;
+            border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+            gap: 0.8rem;
+        }
+
+        .ranking-item.current-user {
+            background: rgba(251, 191, 36, 0.2);
+            border-radius: 8px;
+        }
+
+        .ranking-position {
+            font-size: clamp(1rem, 3vw, 1.3rem);
+            font-weight: 900;
+            color: #fbbf24;
+            min-width: 35px;
+            text-align: center;
+        }
+
+        .ranking-position.gold { color: #fbbf24; }
+        .ranking-position.silver { color: #c0c0c0; }
+        .ranking-position.bronze { color: #cd7f32; }
+
+        .ranking-name {
+            flex: 1;
+            color: #fff;
+            font-size: clamp(0.85rem, 2.5vw, 1rem);
+        }
+
+        .ranking-score {
+            color: #fcd34d;
+            font-weight: 700;
+            font-size: clamp(0.85rem, 2.5vw, 1rem);
+        }
+
+        .your-rank {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(251, 191, 36, 0.15);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .your-rank-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: clamp(0.7rem, 2vw, 0.85rem);
+        }
+
+        .your-rank-value {
+            color: #fbbf24;
+            font-size: clamp(1.5rem, 5vw, 2rem);
+            font-weight: 900;
+        }
+
+        /* Player Name Input */
+        .name-input-container {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .name-input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #fbbf24;
+            border-radius: 25px;
+            padding: 0.8rem 1.5rem;
+            color: #fff;
+            font-size: 1rem;
+            text-align: center;
+            width: 100%;
+            max-width: 250px;
+            outline: none;
+        }
+
+        .name-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        #hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: clamp(0.8rem, 2vw, 1.5rem) clamp(1rem, 3vw, 2rem);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: none;
+            z-index: 50;
+            background: linear-gradient(to bottom, rgba(26, 26, 10, 0.8) 0%, transparent 100%);
+        }
+
+        .hud-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .hud-label {
+            font-size: clamp(0.5rem, 1.5vw, 0.7rem);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 0.2rem;
+        }
+
+        .hud-value {
+            font-size: clamp(1.2rem, 5vw, 2.5rem);
+            font-weight: 900;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .combo-display {
+            position: fixed;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: clamp(2rem, 10vw, 4rem);
+            font-weight: 900;
+            color: #fbbf24;
+            text-shadow: 0 0 30px #fbbf24, 0 0 60px #f59e0b;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 60;
+            transition: opacity 0.1s ease;
+            text-align: center;
+        }
+
+        .combo-display.show {
+            animation: comboPop 0.5s ease-out;
+        }
+
+        @keyframes comboPop {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+        }
+
+        .game-over-stats {
+            text-align: center;
+            margin: 1.5rem 0;
+            width: 100%;
+            max-width: 350px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: clamp(0.5rem, 2vw, 0.8rem) clamp(1rem, 4vw, 2rem);
+            border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+        }
+
+        .stat-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: clamp(0.8rem, 2.5vw, 1rem);
+        }
+
+        .stat-value {
+            color: #fcd34d;
+            font-weight: bold;
+            font-size: clamp(0.8rem, 2.5vw, 1rem);
+        }
+
+        .final-score {
+            font-size: clamp(2rem, 10vw, 3.5rem);
+            font-weight: 900;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0.5rem 0;
+        }
+
+        /* Touch Control Zones */
+        .touch-zones {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            z-index: 40;
+            pointer-events: none;
+        }
+
+        .touch-zone {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: clamp(2rem, 8vh, 5rem);
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        .touch-zone:active .zone-indicator {
+            opacity: 0.8;
+            transform: scale(1.1);
+        }
+
+        .zone-indicator {
+            width: clamp(60px, 15vw, 100px);
+            height: clamp(60px, 15vw, 100px);
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.2));
+            border: 2px solid rgba(251, 191, 36, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: clamp(1.5rem, 5vw, 2.5rem);
+            color: rgba(255, 255, 255, 0.6);
+            transition: opacity 0.15s ease, transform 0.15s ease;
+            opacity: 0.5;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        }
+
+        .zone-indicator.active {
+            opacity: 1;
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.5), rgba(245, 158, 11, 0.5));
+            border-color: rgba(251, 191, 36, 0.8);
+            transform: scale(1.1);
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.5);
+        }
+
+        .pulse-ring {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: clamp(60px, 15vw, 100px);
+            height: clamp(60px, 15vw, 100px);
+            border: 3px solid rgba(251, 191, 36, 0.5);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 55;
+            opacity: 0;
+        }
+
+        .pulse-ring.pulse {
+            animation: pulseRing 0.5s ease-out;
+        }
+
+        @keyframes pulseRing {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(3); }
+        }
+
+        .lane-indicator {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            display: flex;
+            z-index: 45;
+            pointer-events: none;
+        }
+
+        .lane-segment {
+            flex: 1;
+            height: 100%;
+            background: rgba(251, 191, 36, 0.3);
+            transition: background 0.15s ease;
+        }
+
+        .lane-segment.active {
+            background: linear-gradient(to top, #fbbf24, transparent);
+            box-shadow: 0 0 20px #fbbf24;
+        }
+
+        .miss-counter {
+            position: fixed;
+            bottom: clamp(1rem, 3vh, 2rem);
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        .miss-dot {
+            width: clamp(8px, 2vw, 12px);
+            height: clamp(8px, 2vw, 12px);
+            border-radius: 50%;
+            background: rgba(251, 191, 36, 0.3);
+            border: 1px solid rgba(251, 191, 36, 0.5);
+            transition: background 0.3s ease;
+        }
+
+        .miss-dot.missed {
+            background: #ef4444;
+            border-color: #ef4444;
+            box-shadow: 0 0 10px #ef4444;
+        }
+
+        .swipe-hint {
+            position: fixed;
+            bottom: 25%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: clamp(0.7rem, 2vw, 0.9rem);
+            pointer-events: none;
+            z-index: 45;
+            animation: fadeInOut 2s ease infinite;
+        }
+
+        .swipe-hint .arrow {
+            font-size: clamp(1.2rem, 4vw, 1.8rem);
+            animation: swipeArrow 1.5s ease infinite;
+        }
+
+        .swipe-hint .arrow.left {
+            animation-direction: reverse;
+        }
+
+        @keyframes swipeArrow {
+            0%, 100% { transform: translateX(0); opacity: 0.4; }
+            50% { transform: translateX(10px); opacity: 1; }
+        }
+
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+        }
+
+        .ripple {
+            position: fixed;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(251, 191, 36, 0.4) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 35;
+            animation: rippleEffect 0.6s ease-out forwards;
+        }
+
+        @keyframes rippleEffect {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(4); opacity: 0; }
+        }
+
+        @media (max-height: 400px) and (orientation: landscape) {
+            .instructions { display: none; }
+            .game-over-stats { margin: 0.5rem 0; }
+            .stat-row { padding: 0.3rem 1rem; }
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fbbf24;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud" style="display: none;">
+        <div class="hud-item">
+            <span class="hud-label">RHAP</span>
+            <span class="hud-value" id="tokenCount">0</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Combo</span>
+            <span class="hud-value" id="comboCount">x1</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Pontos</span>
+            <span class="hud-value" id="scoreCount">0</span>
+        </div>
+    </div>
+
+    <div class="miss-counter" id="missCounter" style="display: none;"></div>
+
+    <div class="combo-display" id="comboDisplay"></div>
+    <div class="pulse-ring" id="pulseRing"></div>
+
+    <div class="touch-zones" id="touchZones" style="display: none;">
+        <div class="touch-zone" id="leftZone">
+            <div class="zone-indicator" id="leftIndicator">◀</div>
+        </div>
+        <div class="touch-zone" id="rightZone">
+            <div class="zone-indicator" id="rightIndicator">▶</div>
+        </div>
+    </div>
+
+    <div class="lane-indicator" id="laneIndicator" style="display: none;">
+        <div class="lane-segment" id="lane0"></div>
+        <div class="lane-segment active" id="lane1"></div>
+        <div class="lane-segment" id="lane2"></div>
+    </div>
+
+    <div class="swipe-hint" id="swipeHint" style="display: none;">
+        <span class="arrow left">◀</span>
+        <span>TOQUE ou DESLIZE</span>
+        <span class="arrow right">▶</span>
+    </div>
+
+    <div class="overlay" id="menuScreen">
+        <h1 class="title">RHAP</h1>
+        <p class="subtitle">Rhythm Runner</p>
+        
+        <div class="total-points">
+            🪙 Total: <span id="totalPointsDisplay">0</span> pts
+        </div>
+
+        <div class="name-input-container">
+            <input type="text" class="name-input" id="playerNameInput" placeholder="Seu nome" maxlength="20">
+        </div>
+
+        <div class="menu-buttons">
+            <button class="btn" id="startBtn">▶ Jogar</button>
+            <button class="btn small" id="checkinBtn">📅 Check-in</button>
+            <button class="btn small" id="rankingBtn">🏆 Ranking</button>
+            <button class="btn small" id="missionsBtn">🎯 Missões</button>
+        </div>
+        
+        <div class="instructions">
+            <p>📱 <span>Toque esquerda/direita</span> ou <span>Deslize</span> para mover</p>
+            <p>🖱️ <span>Clique nos lados</span> ou use <span>← → A D</span></p>
+            <p>Colete <span>tokens RHAP</span> no ritmo!</p>
+        </div>
+    </div>
+
+    <div class="overlay hidden" id="gameOverScreen">
+        <h1 class="title">Fim de Jogo</h1>
+        <div class="game-over-stats">
+            <div class="final-score" id="finalScore">0</div>
+            <div class="stat-row">
+                <span class="stat-label">RHAP Coletados</span>
+                <span class="stat-value" id="finalTokens">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Combo Máximo</span>
+                <span class="stat-value" id="finalCombo">x1</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Acertos Perfeitos</span>
+                <span class="stat-value" id="perfectHits">0</span>
+            </div>
+        </div>
+        <button class="btn" id="restartBtn">Jogar Novamente</button>
+        <button class="btn small btn-secondary" id="menuBtn">Menu</button>
+    </div>
+
+    <!-- Check-in Modal -->
+    <div class="modal" id="checkinModal">
+        <div class="modal-content">
+            <button class="modal-close" id="checkinClose">✕</button>
+            <div class="modal-header">
+                <h2 class="modal-title">📅 Check-in Diário</h2>
+            </div>
+            <div id="checkinContent">
+                <div style="text-align: center; padding: 2rem;">
+                    <p style="color: #fff; margin-bottom: 1.5rem; font-size: 1.1rem;">
+                        Faça check-in diário e ganhe <span style="color: #fbbf24; font-weight: bold;">15 pontos!</span>
+                    </p>
+                    <button class="btn" id="doCheckinBtn">✓ Fazer Check-in</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ranking Modal -->
+    <div class="modal" id="rankingModal">
+        <div class="modal-content">
+            <button class="modal-close" id="rankingClose">✕</button>
+            <div class="modal-header">
+                <h2 class="modal-title">🏆 Ranking Global</h2>
+            </div>
+            <div class="your-rank">
+                <div class="your-rank-label">Sua Posição</div>
+                <div class="your-rank-value" id="yourRankDisplay">#-</div>
+            </div>
+            <div class="ranking-list" id="rankingList">
+                <div style="text-align: center; padding: 2rem;">
+                    <div class="loading"></div>
+                    <p style="color: rgba(255,255,255,0.6); margin-top: 1rem;">Carregando...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Missions Modal -->
+    <div class="modal" id="missionsModal">
+        <div class="modal-content">
+            <button class="modal-close" id="missionsClose">✕</button>
+            <div class="modal-header">
+                <h2 class="modal-title">🎯 Missões</h2>
+                <p style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">Complete missões e ganhe pontos!</p>
+            </div>
+            <div id="missionsList"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // ============= FIREBASE CONFIG =============
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            authDomain: "rhap-rhythm-runner.firebaseapp.com",
+            databaseURL: "https://rhap-rhythm-runner-default-rtdb.firebaseio.com",
+            projectId: "rhap-rhythm-runner",
+            storageBucket: "rhap-rhythm-runner.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:xxxxxxxxxxxxx"
+        };
+
+        // Initialize Firebase (will be replaced with real config)
+        let firebaseApp = null;
+        let database = null;
+        let firebaseReady = false;
+
+        try {
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            firebaseReady = true;
+        } catch (e) {
+            console.log('Firebase not configured, using local storage only');
+        }
+
+        // ============= LOCAL STORAGE KEYS =============
+        const STORAGE_KEYS = {
+            PLAYER_NAME: 'rhap_player_name',
+            PLAYER_ID: 'rhap_player_id',
+            TOTAL_POINTS: 'rhap_total_points',
+            GAME_POINTS: 'rhap_game_points',
+            MISSION_POINTS: 'rhap_mission_points',
+            LAST_CHECKIN: 'rhap_last_checkin',
+            MISSIONS_COMPLETED: 'rhap_missions_completed',
+            MISSIONS_COOLDOWNS: 'rhap_missions_cooldowns'
+        };
+
+        // ============= PLAYER DATA =============
+        let playerData = {
+            id: localStorage.getItem(STORAGE_KEYS.PLAYER_ID) || generatePlayerId(),
+            name: localStorage.getItem(STORAGE_KEYS.PLAYER_NAME) || '',
+            totalPoints: parseInt(localStorage.getItem(STORAGE_KEYS.TOTAL_POINTS)) || 0,
+            gamePoints: parseInt(localStorage.getItem(STORAGE_KEYS.GAME_POINTS)) || 0,
+            missionPoints: parseInt(localStorage.getItem(STORAGE_KEYS.MISSION_POINTS)) || 0,
+            lastCheckin: localStorage.getItem(STORAGE_KEYS.LAST_CHECKIN) || null,
+            missionsCompleted: JSON.parse(localStorage.getItem(STORAGE_KEYS.MISSIONS_COMPLETED)) || {},
+            missionsCooldowns: JSON.parse(localStorage.getItem(STORAGE_KEYS.MISSIONS_COOLDOWNS)) || {}
+        };
+
+        function generatePlayerId() {
+            const id = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem(STORAGE_KEYS.PLAYER_ID, id);
+            return id;
+        }
+
+        function savePlayerData() {
+            localStorage.setItem(STORAGE_KEYS.PLAYER_NAME, playerData.name);
+            localStorage.setItem(STORAGE_KEYS.TOTAL_POINTS, playerData.totalPoints);
+            localStorage.setItem(STORAGE_KEYS.GAME_POINTS, playerData.gamePoints);
+            localStorage.setItem(STORAGE_KEYS.MISSION_POINTS, playerData.missionPoints);
+            localStorage.setItem(STORAGE_KEYS.LAST_CHECKIN, playerData.lastCheckin || '');
+            localStorage.setItem(STORAGE_KEYS.MISSIONS_COMPLETED, JSON.stringify(playerData.missionsCompleted));
+            localStorage.setItem(STORAGE_KEYS.MISSIONS_COOLDOWNS, JSON.stringify(playerData.missionsCooldowns));
+            
+            updateTotalPointsDisplay();
+            syncToFirebase();
+        }
+
+        function syncToFirebase() {
+            if (!firebaseReady || !playerData.name) return;
+            
+            try {
+                database.ref('players/' + playerData.id).set({
+                    name: playerData.name,
+                    totalPoints: playerData.totalPoints,
+                    gamePoints: playerData.gamePoints,
+                    missionPoints: playerData.missionPoints,
+                    lastUpdate: Date.now()
+                });
+            } catch (e) {
+                console.log('Firebase sync failed:', e);
+            }
+        }
+
+        function updateTotalPointsDisplay() {
+            document.getElementById('totalPointsDisplay').textContent = playerData.totalPoints.toLocaleString();
+        }
+
+        // ============= MISSIONS CONFIG =============
+        const MISSIONS = [
+            {
+                id: 'follow_instagram',
+                name: '📸 Seguir Instagram',
+                points: 200,
+                url: 'https://www.instagram.com/rhapsodycoin',
+                type: 'once',
+                cooldown: null
+            },
+            {
+                id: 'like_instagram',
+                name: '❤️ Curtir Post Instagram',
+                points: 120,
+                url: 'https://www.instagram.com/rhapsodycoin',
+                type: 'daily',
+                cooldown: 24 * 60 * 60 * 1000
+            },
+            {
+                id: 'follow_linkedin',
+                name: '💼 Seguir LinkedIn',
+                points: 200,
+                url: 'https://www.linkedin.com/company/rhapsody-coin/',
+                type: 'once',
+                cooldown: null
+            },
+            {
+                id: 'like_linkedin',
+                name: '👍 Curtir Post LinkedIn',
+                points: 120,
+                url: 'https://www.linkedin.com/company/rhapsody-coin/',
+                type: 'daily',
+                cooldown: 24 * 60 * 60 * 1000
+            },
+            {
+                id: 'follow_twitter',
+                name: '🐦 Seguir Twitter/X',
+                points: 200,
+                url: 'https://x.com/Rhapsodycoin',
+                type: 'once',
+                cooldown: null
+            },
+            {
+                id: 'like_twitter',
+                name: '💙 Curtir Post Twitter/X',
+                points: 120,
+                url: 'https://x.com/Rhapsodycoin',
+                type: 'daily',
+                cooldown: 24 * 60 * 60 * 1000
+            },
+            {
+                id: 'download_musicplayce',
+                name: '🎵 Baixar App Musicplayce',
+                points: 300,
+                url: 'https://musicplayce.com/',
+                type: 'once',
+                cooldown: null
+            }
+        ];
+
+        // ============= CHECK-IN SYSTEM =============
+        const CHECKIN_POINTS = 15;
+        const CHECKIN_COOLDOWN = 24 * 60 * 60 * 1000; // 24 hours
+
+        function canCheckin() {
+            if (!playerData.lastCheckin) return true;
+            const lastTime = new Date(playerData.lastCheckin).getTime();
+            return Date.now() - lastTime >= CHECKIN_COOLDOWN;
+        }
+
+        function getCheckinTimeRemaining() {
+            if (!playerData.lastCheckin) return 0;
+            const lastTime = new Date(playerData.lastCheckin).getTime();
+            const remaining = CHECKIN_COOLDOWN - (Date.now() - lastTime);
+            return Math.max(0, remaining);
+        }
+
+        function formatTimeRemaining(ms) {
+            const hours = Math.floor(ms / (1000 * 60 * 60));
+            const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+            return `${hours}h ${minutes}min`;
+        }
+
+        function doCheckin() {
+            if (!canCheckin()) return false;
+            
+            playerData.lastCheckin = new Date().toISOString();
+            playerData.missionPoints += CHECKIN_POINTS;
+            playerData.totalPoints += CHECKIN_POINTS;
+            savePlayerData();
+            return true;
+        }
+
+        function updateCheckinModal() {
+            const content = document.getElementById('checkinContent');
+            
+            if (canCheckin()) {
+                content.innerHTML = `
+                    <div style="text-align: center; padding: 2rem;">
+                        <p style="color: #fff; margin-bottom: 1.5rem; font-size: 1.1rem;">
+                            Faça check-in diário e ganhe <span style="color: #fbbf24; font-weight: bold;">15 pontos!</span>
+                        </p>
+                        <button class="btn" id="doCheckinBtn">✓ Fazer Check-in</button>
+                    </div>
+                `;
+                document.getElementById('doCheckinBtn').addEventListener('click', () => {
+                    if (doCheckin()) {
+                        updateCheckinModal();
+                    }
+                });
+            } else {
+                const remaining = getCheckinTimeRemaining();
+                content.innerHTML = `
+                    <div class="checkin-success">
+                        <p style="font-size: 2rem; margin-bottom: 1rem;">✅</p>
+                        <p style="font-weight: bold; margin-bottom: 0.5rem;">Feito! Volte amanhã</p>
+                        <p style="color: #fcd34d; font-size: 0.9rem;">Próximo check-in em: ${formatTimeRemaining(remaining)}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // ============= MISSIONS SYSTEM =============
+        function canCompleteMission(mission) {
+            if (mission.type === 'once') {
+                return !playerData.missionsCompleted[mission.id];
+            } else if (mission.type === 'daily') {
+                const lastTime = playerData.missionsCooldowns[mission.id];
+                if (!lastTime) return true;
+                return Date.now() - lastTime >= mission.cooldown;
+            }
+            return false;
+        }
+
+        function getMissionTimeRemaining(mission) {
+            if (mission.type !== 'daily') return 0;
+            const lastTime = playerData.missionsCooldowns[mission.id];
+            if (!lastTime) return 0;
+            return Math.max(0, mission.cooldown - (Date.now() - lastTime));
+        }
+
+        function completeMission(mission) {
+            if (!canCompleteMission(mission)) return false;
+            
+            // Open URL
+            window.open(mission.url, '_blank');
+            
+            // Mark as completed
+            if (mission.type === 'once') {
+                playerData.missionsCompleted[mission.id] = true;
+            } else if (mission.type === 'daily') {
+                playerData.missionsCooldowns[mission.id] = Date.now();
+            }
+            
+            // Add points
+            playerData.missionPoints += mission.points;
+            playerData.totalPoints += mission.points;
+            savePlayerData();
+            
+            // Update UI
+            updateMissionsModal();
+            return true;
+        }
+
+        function updateMissionsModal() {
+            const list = document.getElementById('missionsList');
+            list.innerHTML = MISSIONS.map(mission => {
+                const canComplete = canCompleteMission(mission);
+                const isCompleted = mission.type === 'once' && playerData.missionsCompleted[mission.id];
+                const remaining = getMissionTimeRemaining(mission);
+                
+                let btnClass = 'mission-btn';
+                let btnText = 'Ir';
+                
+                if (isCompleted) {
+                    btnClass += ' completed';
+                    btnText = '✓ Feito';
+                } else if (!canComplete && mission.type === 'daily') {
+                    btnClass += ' cooldown';
+                    btnText = formatTimeRemaining(remaining);
+                }
+                
+                return `
+                    <div class="mission-item">
+                        <div class="mission-info">
+                            <div class="mission-name">${mission.name}</div>
+                            <div class="mission-points">+${mission.points} pts</div>
+                            ${mission.type === 'daily' && !isCompleted ? '<div class="mission-cooldown">⏰ Diário (24h cooldown)</div>' : ''}
+                        </div>
+                        <button class="${btnClass}" data-mission-id="${mission.id}" ${!canComplete ? 'disabled' : ''}>
+                            ${btnText}
+                        </button>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add click handlers
+            list.querySelectorAll('.mission-btn:not([disabled])').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const missionId = btn.dataset.missionId;
+                    const mission = MISSIONS.find(m => m.id === missionId);
+                    if (mission) completeMission(mission);
+                });
+            });
+        }
+
+        // ============= RANKING SYSTEM =============
+        async function loadRanking() {
+            const list = document.getElementById('rankingList');
+            const yourRank = document.getElementById('yourRankDisplay');
+            
+            list.innerHTML = `
+                <div style="text-align: center; padding: 2rem;">
+                    <div class="loading"></div>
+                    <p style="color: rgba(255,255,255,0.6); margin-top: 1rem;">Carregando...</p>
+                </div>
+            `;
+            
+            try {
+                if (firebaseReady) {
+                    const snapshot = await database.ref('players').orderByChild('totalPoints').limitToLast(100).once('value');
+                    const players = [];
+                    snapshot.forEach(child => {
+                        players.push({ id: child.key, ...child.val() });
+                    });
+                    
+                    // Sort descending
+                    players.sort((a, b) => b.totalPoints - a.totalPoints);
+                    
+                    // Find user rank
+                    const userIndex = players.findIndex(p => p.id === playerData.id);
+                    yourRank.textContent = userIndex >= 0 ? `#${userIndex + 1}` : '#-';
+                    
+                    renderRankingList(players);
+                } else {
+                    // Fallback to local data only
+                    const localPlayers = [{ 
+                        id: playerData.id, 
+                        name: playerData.name || 'Você', 
+                        totalPoints: playerData.totalPoints 
+                    }];
+                    yourRank.textContent = '#1';
+                    renderRankingList(localPlayers);
+                }
+            } catch (e) {
+                console.log('Ranking load failed:', e);
+                list.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">
+                        <p>Não foi possível carregar o ranking.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderRankingList(players) {
+            const list = document.getElementById('rankingList');
+            
+            if (players.length === 0) {
+                list.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">
+                        <p>Nenhum jogador ainda. Seja o primeiro!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = players.slice(0, 50).map((player, index) => {
+                const position = index + 1;
+                let posClass = 'ranking-position';
+                if (position === 1) posClass += ' gold';
+                else if (position === 2) posClass += ' silver';
+                else if (position === 3) posClass += ' bronze';
+                
+                const isCurrentUser = player.id === playerData.id;
+                
+                return `
+                    <div class="ranking-item ${isCurrentUser ? 'current-user' : ''}">
+                        <div class="${posClass}">${position}</div>
+                        <div class="ranking-name">${player.name || 'Anônimo'}</div>
+                        <div class="ranking-score">${player.totalPoints?.toLocaleString() || 0}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ============= MODAL HANDLERS =============
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        // Check-in modal
+        document.getElementById('checkinBtn').addEventListener('click', () => {
+            updateCheckinModal();
+            openModal('checkinModal');
+        });
+        document.getElementById('checkinClose').addEventListener('click', () => closeModal('checkinModal'));
+
+        // Ranking modal
+        document.getElementById('rankingBtn').addEventListener('click', () => {
+            loadRanking();
+            openModal('rankingModal');
+        });
+        document.getElementById('rankingClose').addEventListener('click', () => closeModal('rankingModal'));
+
+        // Missions modal
+        document.getElementById('missionsBtn').addEventListener('click', () => {
+            updateMissionsModal();
+            openModal('missionsModal');
+        });
+        document.getElementById('missionsClose').addEventListener('click', () => closeModal('missionsModal'));
+
+        // Close modals on outside click
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('show');
+                }
+            });
+        });
+
+        // Player name input
+        const nameInput = document.getElementById('playerNameInput');
+        nameInput.value = playerData.name;
+        nameInput.addEventListener('input', (e) => {
+            playerData.name = e.target.value.trim();
+            savePlayerData();
+        });
+
+        // ============= GAME STATE =============
+        const GameState = {
+            MENU: 'menu',
+            PLAYING: 'playing',
+            GAME_OVER: 'gameover'
+        };
+
+        let currentState = GameState.MENU;
+        let score = 0;
+        let tokens = 0;
+        let combo = 1;
+        let maxCombo = 1;
+        let perfectHits = 0;
+        let playerLane = 1;
+        let targetPlayerX = 0;
+        let gameTime = 0;
+        let lastBeatTime = 0;
+        let bpm = 128;
+        let beatInterval = 60000 / bpm;
+        let missedTokens = 0;
+        let maxMisses = 10;
+
+        // Input state
+        let isLeftPressed = false;
+        let isRightPressed = false;
+        let lastMoveTime = 0;
+        const moveDelay = 120;
+
+        // Touch tracking
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let isTouching = false;
+        let activeTouch = null;
+
+        // Audio Context
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let isAudioInitialized = false;
+        let gainNode;
+
+        // Three.js Variables
+        let scene, camera, renderer;
+        let player, playerGlow;
+        let tokenPool = [];
+        let activeTokens = [];
+        let particles = [];
+        let trailParticles = [];
+        let backgroundParticles = [];
+        let clock;
+
+        // Lane positions
+        const lanes = [-3, 0, 3];
+
+        // DOM Elements
+        const canvas = document.getElementById('gameCanvas');
+        const menuScreen = document.getElementById('menuScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const hud = document.getElementById('hud');
+        const tokenCountEl = document.getElementById('tokenCount');
+        const comboCountEl = document.getElementById('comboCount');
+        const scoreCountEl = document.getElementById('scoreCount');
+        const comboDisplay = document.getElementById('comboDisplay');
+        const pulseRing = document.getElementById('pulseRing');
+        const touchZones = document.getElementById('touchZones');
+        const leftZone = document.getElementById('leftZone');
+        const rightZone = document.getElementById('rightZone');
+        const leftIndicator = document.getElementById('leftIndicator');
+        const rightIndicator = document.getElementById('rightIndicator');
+        const laneIndicator = document.getElementById('laneIndicator');
+        const swipeHint = document.getElementById('swipeHint');
+        const missCounter = document.getElementById('missCounter');
+
+        // Initialize miss counter dots
+        function initMissCounter() {
+            missCounter.innerHTML = '';
+            for (let i = 0; i < maxMisses; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'miss-dot';
+                dot.id = `missDot${i}`;
+                missCounter.appendChild(dot);
+            }
+        }
+
+        function updateMissCounter() {
+            for (let i = 0; i < maxMisses; i++) {
+                const dot = document.getElementById(`missDot${i}`);
+                if (dot) {
+                    dot.classList.toggle('missed', i < missedTokens);
+                }
+            }
+        }
+
+        function updateLaneIndicator() {
+            for (let i = 0; i < 3; i++) {
+                const lane = document.getElementById(`lane${i}`);
+                if (lane) {
+                    lane.classList.toggle('active', i === playerLane);
+                }
+            }
+        }
+
+        function createRipple(x, y) {
+            const ripple = document.createElement('div');
+            ripple.className = 'ripple';
+            const size = Math.min(window.innerWidth, window.innerHeight) * 0.3;
+            ripple.style.width = size + 'px';
+            ripple.style.height = size + 'px';
+            ripple.style.left = (x - size / 2) + 'px';
+            ripple.style.top = (y - size / 2) + 'px';
+            document.body.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 600);
+        }
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x1a1a0a, 0.02);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 8, 12);
+            camera.lookAt(0, 0, -10);
+
+            renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(0x1a1a0a);
+
+            clock = new THREE.Clock();
+
+            createPlayer();
+            createTrack();
+            createBackgroundParticles();
+            createLighting();
+            createTokenPool();
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createPlayer() {
+            const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            const material = new THREE.MeshPhongMaterial({
+                color: 0xfbbf24,
+                emissive: 0xf59e0b,
+                emissiveIntensity: 0.5,
+                shininess: 100
+            });
+            player = new THREE.Mesh(geometry, material);
+            player.position.set(0, 0.5, 5);
+            scene.add(player);
+
+            const glowGeometry = new THREE.SphereGeometry(0.7, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xfbbf24,
+                transparent: true,
+                opacity: 0.3
+            });
+            playerGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+            player.add(playerGlow);
+
+            const playerLight = new THREE.PointLight(0xfbbf24, 2, 10);
+            player.add(playerLight);
+        }
+
+        function createTrack() {
+            const groundGeometry = new THREE.PlaneGeometry(20, 100, 20, 100);
+            const groundMaterial = new THREE.MeshBasicMaterial({
+                color: 0x2a2a1a,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.3
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = 0;
+            ground.position.z = -30;
+            scene.add(ground);
+
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: 0xfcd34d, 
+                transparent: true, 
+                opacity: 0.5 
+            });
+
+            for (let i = -1; i <= 1; i += 2) {
+                const points = [
+                    new THREE.Vector3(i * 1.5, 0.01, 10),
+                    new THREE.Vector3(i * 1.5, 0.01, -50)
+                ];
+                const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.Line(lineGeometry, lineMaterial);
+                scene.add(line);
+            }
+
+            for (let side of [-1, 1]) {
+                const railGeometry = new THREE.BoxGeometry(0.2, 0.5, 100);
+                const railMaterial = new THREE.MeshPhongMaterial({
+                    color: 0xfcd34d,
+                    emissive: 0xfcd34d,
+                    emissiveIntensity: 0.3
+                });
+                const rail = new THREE.Mesh(railGeometry, railMaterial);
+                rail.position.set(side * 5, 0.25, -30);
+                scene.add(rail);
+            }
+        }
+
+        function createBackgroundParticles() {
+            const particleCount = 300;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 60;
+                positions[i * 3 + 1] = Math.random() * 30;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 100 - 20;
+
+                const color = Math.random() > 0.5 ? 
+                    new THREE.Color(0xfbbf24) : new THREE.Color(0xfcd34d);
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.15,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+
+            const particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
+            backgroundParticles.push({ mesh: particleSystem, geometry });
+        }
+
+        function createLighting() {
+            const ambientLight = new THREE.AmbientLight(0x2a2a1a, 0.5);
+            scene.add(ambientLight);
+
+            const spotLight1 = new THREE.SpotLight(0xfbbf24, 1);
+            spotLight1.position.set(-10, 20, 0);
+            spotLight1.angle = Math.PI / 4;
+            scene.add(spotLight1);
+
+            const spotLight2 = new THREE.SpotLight(0xfcd34d, 1);
+            spotLight2.position.set(10, 20, -20);
+            spotLight2.angle = Math.PI / 4;
+            scene.add(spotLight2);
+        }
+
+        function createTokenPool() {
+            for (let i = 0; i < 30; i++) {
+                const token = createToken();
+                token.visible = false;
+                tokenPool.push(token);
+                scene.add(token);
+            }
+        }
+
+        function createToken() {
+            const group = new THREE.Group();
+
+            const geometry = new THREE.OctahedronGeometry(0.4, 0);
+            const material = new THREE.MeshPhongMaterial({
+                color: 0xfbbf24,
+                emissive: 0xfbbf24,
+                emissiveIntensity: 0.5,
+                shininess: 100
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            group.add(mesh);
+
+            const ringGeometry = new THREE.TorusGeometry(0.5, 0.05, 8, 32);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: 0xfbbf24,
+                transparent: true,
+                opacity: 0.5
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.rotation.x = Math.PI / 2;
+            group.add(ring);
+
+            const light = new THREE.PointLight(0xfbbf24, 1, 5);
+            group.add(light);
+
+            group.userData = { collected: false, lane: 0 };
+
+            return group;
+        }
+
+        function getTokenFromPool() {
+            for (let token of tokenPool) {
+                if (!token.visible) {
+                    token.visible = true;
+                    token.userData.collected = false;
+                    return token;
+                }
+            }
+            return null;
+        }
+
+        function spawnToken() {
+            const token = getTokenFromPool();
+            if (!token) return;
+
+            const lane = Math.floor(Math.random() * 3);
+            token.position.set(lanes[lane], 0.5, -40);
+            token.userData.lane = lane;
+            activeTokens.push(token);
+        }
+
+        function createCollectEffect(position) {
+            const particleCount = 15;
+            for (let i = 0; i < particleCount; i++) {
+                const geometry = new THREE.SphereGeometry(0.05, 6, 6);
+                const material = new THREE.MeshBasicMaterial({
+                    color: Math.random() > 0.5 ? 0xfbbf24 : 0xfcd34d,
+                    transparent: true,
+                    opacity: 1
+                });
+                const particle = new THREE.Mesh(geometry, material);
+                particle.position.copy(position);
+                particle.userData = {
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.3,
+                        Math.random() * 0.3,
+                        (Math.random() - 0.5) * 0.3
+                    ),
+                    life: 1
+                };
+                scene.add(particle);
+                particles.push(particle);
+            }
+        }
+
+        function initAudio() {
+            if (isAudioInitialized) return;
+            
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.3;
+            gainNode.connect(audioContext.destination);
+            
+            isAudioInitialized = true;
+            startMusic();
+        }
+
+        function startMusic() {
+            playBeat();
+        }
+
+        function playBeat() {
+            if (currentState !== GameState.PLAYING) return;
+
+            const now = audioContext.currentTime;
+            
+            const kickOsc = audioContext.createOscillator();
+            const kickGain = audioContext.createGain();
+            kickOsc.type = 'sine';
+            kickOsc.frequency.setValueAtTime(150, now);
+            kickOsc.frequency.exponentialRampToValueAtTime(0.01, now + 0.2);
+            kickGain.gain.setValueAtTime(0.8, now);
+            kickGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            kickOsc.connect(kickGain);
+            kickGain.connect(analyser);
+            analyser.connect(gainNode);
+            kickOsc.start(now);
+            kickOsc.stop(now + 0.2);
+
+            if (Math.random() > 0.5) {
+                const hihatOsc = audioContext.createOscillator();
+                const hihatGain = audioContext.createGain();
+                hihatOsc.type = 'square';
+                hihatOsc.frequency.setValueAtTime(8000, now);
+                hihatGain.gain.setValueAtTime(0.08, now);
+                hihatGain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                hihatOsc.connect(hihatGain);
+                hihatGain.connect(gainNode);
+                hihatOsc.start(now);
+                hihatOsc.stop(now + 0.05);
+            }
+
+            if (Math.random() > 0.7) {
+                const notes = [220, 277.18, 329.63, 440, 554.37];
+                const synthOsc = audioContext.createOscillator();
+                const synthGain = audioContext.createGain();
+                synthOsc.type = 'sawtooth';
+                synthOsc.frequency.setValueAtTime(notes[Math.floor(Math.random() * notes.length)], now);
+                synthGain.gain.setValueAtTime(0.12, now);
+                synthGain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                synthOsc.connect(synthGain);
+                synthGain.connect(gainNode);
+                synthOsc.start(now);
+                synthOsc.stop(now + 0.3);
+            }
+
+            setTimeout(playBeat, beatInterval);
+        }
+
+        function playCollectSound() {
+            if (!audioContext) return;
+            
+            const now = audioContext.currentTime;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.exponentialRampToValueAtTime(1760, now + 0.1);
+            
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+            
+            osc.connect(gain);
+            gain.connect(gainNode);
+            
+            osc.start(now);
+            osc.stop(now + 0.15);
+        }
+
+        function playMissSound() {
+            if (!audioContext) return;
+            
+            const now = audioContext.currentTime;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.exponentialRampToValueAtTime(50, now + 0.2);
+            
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            
+            osc.connect(gain);
+            gain.connect(gainNode);
+            
+            osc.start(now);
+            osc.stop(now + 0.2);
+        }
+
+        function startGame() {
+            if (!playerData.name) {
+                playerData.name = 'Jogador_' + Math.floor(Math.random() * 10000);
+                nameInput.value = playerData.name;
+                savePlayerData();
+            }
+            
+            currentState = GameState.PLAYING;
+            score = 0;
+            tokens = 0;
+            combo = 1;
+            maxCombo = 1;
+            perfectHits = 0;
+            missedTokens = 0;
+            playerLane = 1;
+            targetPlayerX = lanes[playerLane];
+            gameTime = 0;
+            lastBeatTime = 0;
+
+            activeTokens.forEach(t => t.visible = false);
+            activeTokens = [];
+
+            menuScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            hud.style.display = 'flex';
+            touchZones.style.display = 'flex';
+            laneIndicator.style.display = 'flex';
+            swipeHint.style.display = 'flex';
+            missCounter.style.display = 'flex';
+
+            initMissCounter();
+            updateLaneIndicator();
+            updateHUD();
+
+            initAudio();
+
+            setTimeout(() => {
+                swipeHint.style.display = 'none';
+            }, 5000);
+        }
+
+        function gameOver() {
+            currentState = GameState.GAME_OVER;
+            
+            // Score = tokens collected (pontuação = RHAP coletados)
+            score = tokens;
+            
+            hud.style.display = 'none';
+            touchZones.style.display = 'none';
+            laneIndicator.style.display = 'none';
+            swipeHint.style.display = 'none';
+            missCounter.style.display = 'none';
+            
+            // Add game score to total
+            playerData.gamePoints += tokens;
+            playerData.totalPoints += tokens;
+            savePlayerData();
+            
+            document.getElementById('finalScore').textContent = tokens.toLocaleString();
+            document.getElementById('finalTokens').textContent = tokens;
+            document.getElementById('finalCombo').textContent = 'x' + maxCombo;
+            document.getElementById('perfectHits').textContent = perfectHits;
+            
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        function goToMenu() {
+            currentState = GameState.MENU;
+            gameOverScreen.classList.add('hidden');
+            menuScreen.classList.remove('hidden');
+            updateTotalPointsDisplay();
+        }
+
+        function updateHUD() {
+            tokenCountEl.textContent = tokens;
+            comboCountEl.textContent = 'x' + combo;
+            // Score = tokens (pontuação = RHAP coletados)
+            scoreCountEl.textContent = tokens.toLocaleString();
+        }
+
+        function showComboPopup(text) {
+            comboDisplay.textContent = text;
+            comboDisplay.classList.remove('show');
+            void comboDisplay.offsetWidth;
+            comboDisplay.classList.add('show');
+        }
+
+        function triggerPulse() {
+            pulseRing.classList.remove('pulse');
+            void pulseRing.offsetWidth;
+            pulseRing.classList.add('pulse');
+        }
+
+        function movePlayer(direction) {
+            if (currentState !== GameState.PLAYING) return;
+            
+            const now = Date.now();
+            if (now - lastMoveTime < 80) return;
+            lastMoveTime = now;
+            
+            const oldLane = playerLane;
+            playerLane += direction;
+            playerLane = Math.max(0, Math.min(2, playerLane));
+            
+            if (oldLane !== playerLane) {
+                targetPlayerX = lanes[playerLane];
+                updateLaneIndicator();
+                
+                if (navigator.vibrate) {
+                    navigator.vibrate(10);
+                }
+            }
+        }
+
+        function showButtonFeedback(side) {
+            const indicator = side === 'left' ? leftIndicator : rightIndicator;
+            indicator.classList.add('active');
+            setTimeout(() => indicator.classList.remove('active'), 150);
+        }
+
+        // ============= INPUT HANDLING =============
+
+        document.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                isLeftPressed = true;
+                movePlayer(-1);
+                showButtonFeedback('left');
+            } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                isRightPressed = true;
+                movePlayer(1);
+                showButtonFeedback('right');
+            } else if (e.key === ' ' || e.key === 'Enter') {
+                if (currentState === GameState.MENU) {
+                    startGame();
+                } else if (currentState === GameState.GAME_OVER) {
+                    startGame();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                isLeftPressed = false;
+            } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                isRightPressed = false;
+            }
+        });
+
+        function handleTouchStart(e, side) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const touch = e.touches[0];
+            createRipple(touch.clientX, touch.clientY);
+            
+            if (side === 'left') {
+                isLeftPressed = true;
+                movePlayer(-1);
+                showButtonFeedback('left');
+            } else {
+                isRightPressed = true;
+                movePlayer(1);
+                showButtonFeedback('right');
+            }
+        }
+
+        function handleTouchEnd(e, side) {
+            e.preventDefault();
+            if (side === 'left') {
+                isLeftPressed = false;
+            } else {
+                isRightPressed = false;
+            }
+        }
+
+        leftZone.addEventListener('touchstart', (e) => handleTouchStart(e, 'left'), { passive: false });
+        leftZone.addEventListener('touchend', (e) => handleTouchEnd(e, 'left'), { passive: false });
+        leftZone.addEventListener('touchcancel', (e) => handleTouchEnd(e, 'left'), { passive: false });
+
+        rightZone.addEventListener('touchstart', (e) => handleTouchStart(e, 'right'), { passive: false });
+        rightZone.addEventListener('touchend', (e) => handleTouchEnd(e, 'right'), { passive: false });
+        rightZone.addEventListener('touchcancel', (e) => handleTouchEnd(e, 'right'), { passive: false });
+
+        leftZone.addEventListener('mousedown', (e) => {
+            createRipple(e.clientX, e.clientY);
+            isLeftPressed = true;
+            movePlayer(-1);
+            showButtonFeedback('left');
+        });
+
+        leftZone.addEventListener('mouseup', () => { isLeftPressed = false; });
+        leftZone.addEventListener('mouseleave', () => { isLeftPressed = false; });
+
+        rightZone.addEventListener('mousedown', (e) => {
+            createRipple(e.clientX, e.clientY);
+            isRightPressed = true;
+            movePlayer(1);
+            showButtonFeedback('right');
+        });
+
+        rightZone.addEventListener('mouseup', () => { isRightPressed = false; });
+        rightZone.addEventListener('mouseleave', () => { isRightPressed = false; });
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (currentState !== GameState.PLAYING) return;
+            
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchStartTime = Date.now();
+            isTouching = true;
+            activeTouch = touch.identifier;
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isTouching || currentState !== GameState.PLAYING) return;
+            
+            const touch = Array.from(e.touches).find(t => t.identifier === activeTouch);
+            if (!touch) return;
+            
+            const deltaX = touch.clientX - touchStartX;
+            const swipeThreshold = 40;
+            
+            if (Math.abs(deltaX) > swipeThreshold) {
+                movePlayer(deltaX > 0 ? 1 : -1);
+                touchStartX = touch.clientX;
+                
+                createRipple(touch.clientX, touch.clientY);
+                showButtonFeedback(deltaX > 0 ? 'right' : 'left');
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchend', (e) => {
+            if (!isTouching) return;
+            
+            const touch = e.changedTouches[0];
+            const deltaX = touch.clientX - touchStartX;
+            const deltaTime = Date.now() - touchStartTime;
+            
+            if (deltaTime < 200 && Math.abs(deltaX) > 30) {
+                movePlayer(deltaX > 0 ? 1 : -1);
+                showButtonFeedback(deltaX > 0 ? 'right' : 'left');
+            }
+            
+            isTouching = false;
+            activeTouch = null;
+        }, { passive: true });
+
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('startBtn').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            startGame();
+        });
+        
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            startGame();
+        });
+
+        document.getElementById('menuBtn').addEventListener('click', goToMenu);
+        document.getElementById('menuBtn').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            goToMenu();
+        });
+
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function processHeldInput() {
+            if (currentState !== GameState.PLAYING) return;
+            
+            const now = Date.now();
+            if (now - lastMoveTime >= moveDelay) {
+                if (isLeftPressed && !isRightPressed) {
+                    movePlayer(-1);
+                } else if (isRightPressed && !isLeftPressed) {
+                    movePlayer(1);
+                }
+            }
+        }
+
+        function update(delta) {
+            processHeldInput();
+            
+            if (currentState !== GameState.PLAYING) return;
+
+            gameTime += delta * 1000;
+
+            player.position.x += (targetPlayerX - player.position.x) * 0.2;
+            player.position.y = 0.5 + Math.sin(gameTime * 0.005) * 0.1;
+
+            if (playerGlow) {
+                playerGlow.scale.setScalar(1 + Math.sin(gameTime * 0.01) * 0.1);
+            }
+
+            if (gameTime - lastBeatTime >= beatInterval) {
+                lastBeatTime = gameTime;
+                if (Math.random() > 0.3) {
+                    spawnToken();
+                }
+                triggerPulse();
+            }
+
+            for (let i = activeTokens.length - 1; i >= 0; i--) {
+                const token = activeTokens[i];
+                token.position.z += delta * 20;
+
+                token.rotation.y += delta * 2;
+                token.rotation.x += delta;
+
+                if (!token.userData.collected && token.position.z > 3 && token.position.z < 7) {
+                    if (token.userData.lane === playerLane) {
+                        token.userData.collected = true;
+                        token.visible = false;
+                        activeTokens.splice(i, 1);
+
+                        tokens++;
+                        // Score = tokens (pontuação = RHAP coletados)
+                        score = tokens;
+                        
+                        const isPerfect = Math.abs(token.position.z - 5) < 1;
+                        if (isPerfect) {
+                            perfectHits++;
+                            showComboPopup('PERFEITO!');
+                        }
+                        combo++;
+                        maxCombo = Math.max(maxCombo, combo);
+
+                        if (combo >= 10 && combo % 5 === 0) {
+                            showComboPopup('x' + combo + ' COMBO!');
+                        }
+
+                        createCollectEffect(token.position.clone());
+                        playCollectSound();
+                        updateHUD();
+                        
+                        if (navigator.vibrate) {
+                            navigator.vibrate(20);
+                        }
+                        continue;
+                    }
+                }
+
+                if (token.position.z > 10) {
+                    token.visible = false;
+                    activeTokens.splice(i, 1);
+                    
+                    if (!token.userData.collected) {
+                        combo = 1;
+                        missedTokens++;
+                        playMissSound();
+                        updateHUD();
+                        updateMissCounter();
+
+                        if (navigator.vibrate) {
+                            navigator.vibrate([50, 30, 50]);
+                        }
+
+                        if (missedTokens >= maxMisses) {
+                            gameOver();
+                        }
+                    }
+                }
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.position.add(p.userData.velocity);
+                p.userData.velocity.y -= 0.01;
+                p.userData.life -= delta * 2;
+                p.material.opacity = p.userData.life;
+
+                if (p.userData.life <= 0) {
+                    scene.remove(p);
+                    particles.splice(i, 1);
+                }
+            }
+
+            if (analyser && backgroundParticles.length > 0) {
+                analyser.getByteFrequencyData(dataArray);
+                const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                
+                backgroundParticles.forEach(({ mesh }) => {
+                    mesh.rotation.y += delta * 0.05;
+                    mesh.material.opacity = 0.3 + (avg / 256) * 0.5;
+                });
+            }
+
+            if (Math.random() > 0.7) {
+                const trailGeom = new THREE.SphereGeometry(0.08, 6, 6);
+                const trailMat = new THREE.MeshBasicMaterial({
+                    color: 0xfbbf24,
+                    transparent: true,
+                    opacity: 0.5
+                });
+                const trail = new THREE.Mesh(trailGeom, trailMat);
+                trail.position.copy(player.position);
+                trail.userData = { life: 1 };
+                scene.add(trail);
+                trailParticles.push(trail);
+            }
+
+            for (let i = trailParticles.length - 1; i >= 0; i--) {
+                const t = trailParticles[i];
+                t.userData.life -= delta * 3;
+                t.material.opacity = t.userData.life * 0.5;
+                t.scale.setScalar(t.userData.life);
+
+                if (t.userData.life <= 0) {
+                    scene.remove(t);
+                    trailParticles.splice(i, 1);
+                }
+            }
+
+            camera.position.x = Math.sin(gameTime * 0.001) * 0.3;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+            update(delta);
+            renderer.render(scene, camera);
+        }
+
+        // ============= TELEGRAM MINI APP SUPPORT =============
+        if (window.Telegram && window.Telegram.WebApp) {
+            const tg = window.Telegram.WebApp;
+            tg.ready();
+            tg.expand();
+            
+            // Use Telegram user data if available
+            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                const tgUser = tg.initDataUnsafe.user;
+                if (!playerData.name && tgUser.first_name) {
+                    playerData.name = tgUser.first_name;
+                    nameInput.value = playerData.name;
+                    savePlayerData();
+                }
+            }
+        }
+
+        // Initialize
+        updateTotalPointsDisplay();
+        initThree();
+        animate();
+    </script>
+</body>
+</html>
