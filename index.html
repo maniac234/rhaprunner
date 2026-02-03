@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+A<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -470,7 +470,7 @@
 
         .game-over-stats {
             text-align: center;
-            margin: 1.5rem 0;
+            margin: 1rem 0;
             width: 100%;
             max-width: 350px;
         }
@@ -501,6 +501,48 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
             margin: 0.5rem 0;
+        }
+
+        /* Cooldown Display Styles */
+        .cooldown-container {
+            background: rgba(251, 191, 36, 0.1);
+            border: 2px solid rgba(251, 191, 36, 0.4);
+            border-radius: 15px;
+            padding: 1rem 1.5rem;
+            margin: 1rem 0;
+            text-align: center;
+            animation: cooldownPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes cooldownPulse {
+            0%, 100% { border-color: rgba(251, 191, 36, 0.4); }
+            50% { border-color: rgba(251, 191, 36, 0.8); }
+        }
+
+        .cooldown-message {
+            color: #fcd34d;
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
+            margin-bottom: 0.5rem;
+        }
+
+        .cooldown-timer {
+            font-size: clamp(2rem, 8vw, 3rem);
+            font-weight: 900;
+            color: #fbbf24;
+            font-family: 'Courier New', monospace;
+            text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+            letter-spacing: 0.1em;
+        }
+
+        .auto-return {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: clamp(0.75rem, 2vw, 0.9rem);
+            margin: 0.5rem 0;
+        }
+
+        .auto-return span {
+            color: #fbbf24;
+            font-weight: bold;
         }
 
         /* Touch Control Zones */
@@ -785,7 +827,19 @@
                 <span class="stat-value" id="perfectHits">0</span>
             </div>
         </div>
-        <button class="btn" id="restartBtn">Jogar Novamente</button>
+        
+        <!-- Cooldown Display -->
+        <div class="cooldown-container" id="gameOverCooldown">
+            <div class="cooldown-message">⏳ Volte em 8 horas para jogar novamente</div>
+            <div class="cooldown-timer" id="gameOverTimer">08:00:00</div>
+        </div>
+        
+        <!-- Auto return countdown -->
+        <div class="auto-return" id="autoReturnCountdown">
+            Voltando ao menu em <span id="autoReturnSeconds">10</span>s...
+        </div>
+        
+        <button class="btn disabled" id="restartBtn" disabled>⏳ Aguarde</button>
         <button class="btn small btn-secondary" id="menuBtn">Menu</button>
     </div>
 
@@ -874,8 +928,12 @@
             MISSION_POINTS: 'rhap_mission_points',
             LAST_CHECKIN: 'rhap_last_checkin',
             MISSIONS_COMPLETED: 'rhap_missions_completed',
-            MISSIONS_COOLDOWNS: 'rhap_missions_cooldowns'
+            MISSIONS_COOLDOWNS: 'rhap_missions_cooldowns',
+            LAST_GAME: 'rhap_last_game'
         };
+
+        // ============= GAME COOLDOWN CONFIG =============
+        const GAME_COOLDOWN = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
 
         // ============= PLAYER DATA =============
         let playerData = {
@@ -886,7 +944,8 @@
             missionPoints: parseInt(localStorage.getItem(STORAGE_KEYS.MISSION_POINTS)) || 0,
             lastCheckin: localStorage.getItem(STORAGE_KEYS.LAST_CHECKIN) || null,
             missionsCompleted: JSON.parse(localStorage.getItem(STORAGE_KEYS.MISSIONS_COMPLETED)) || {},
-            missionsCooldowns: JSON.parse(localStorage.getItem(STORAGE_KEYS.MISSIONS_COOLDOWNS)) || {}
+            missionsCooldowns: JSON.parse(localStorage.getItem(STORAGE_KEYS.MISSIONS_COOLDOWNS)) || {},
+            lastGame: localStorage.getItem(STORAGE_KEYS.LAST_GAME) || null
         };
 
         function generatePlayerId() {
@@ -903,9 +962,57 @@
             localStorage.setItem(STORAGE_KEYS.LAST_CHECKIN, playerData.lastCheckin || '');
             localStorage.setItem(STORAGE_KEYS.MISSIONS_COMPLETED, JSON.stringify(playerData.missionsCompleted));
             localStorage.setItem(STORAGE_KEYS.MISSIONS_COOLDOWNS, JSON.stringify(playerData.missionsCooldowns));
+            localStorage.setItem(STORAGE_KEYS.LAST_GAME, playerData.lastGame || '');
             
             updateTotalPointsDisplay();
             syncToFirebase();
+        }
+
+        // ============= GAME COOLDOWN FUNCTIONS =============
+        function getGameCooldownRemaining() {
+            if (!playerData.lastGame) return 0;
+            const lastGame = new Date(playerData.lastGame).getTime();
+            const now = Date.now();
+            const remaining = GAME_COOLDOWN - (now - lastGame);
+            return remaining > 0 ? remaining : 0;
+        }
+
+        function formatCooldownTime(ms) {
+            const hours = Math.floor(ms / (1000 * 60 * 60));
+            const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function canPlayGame() {
+            return getGameCooldownRemaining() === 0;
+        }
+
+        function updatePlayButtonState() {
+            const startBtn = document.getElementById('startBtn');
+            const cooldownRemaining = getGameCooldownRemaining();
+            
+            if (cooldownRemaining > 0) {
+                startBtn.classList.add('disabled');
+                startBtn.innerHTML = `⏳ ${formatCooldownTime(cooldownRemaining)}`;
+                startBtn.disabled = true;
+            } else {
+                startBtn.classList.remove('disabled');
+                startBtn.innerHTML = '▶ Jogar';
+                startBtn.disabled = false;
+            }
+        }
+
+        // Update play button every second
+        let playButtonInterval = null;
+        function startPlayButtonUpdater() {
+            if (playButtonInterval) clearInterval(playButtonInterval);
+            playButtonInterval = setInterval(() => {
+                if (currentState === GameState.MENU) {
+                    updatePlayButtonState();
+                }
+            }, 1000);
+            updatePlayButtonState();
         }
 
         function syncToFirebase() {
@@ -1711,6 +1818,14 @@
         }
 
         function startGame() {
+            // Check cooldown before starting
+            if (!canPlayGame()) {
+                // Show alert with remaining time
+                const remaining = getGameCooldownRemaining();
+                alert(`Volte em ${formatCooldownTime(remaining)} para jogar novamente!`);
+                return;
+            }
+            
             if (!playerData.name) {
                 playerData.name = 'Jogador_' + Math.floor(Math.random() * 10000);
                 nameInput.value = playerData.name;
@@ -1751,6 +1866,10 @@
             }, 5000);
         }
 
+        let gameOverTimerInterval = null;
+        let autoReturnInterval = null;
+        let autoReturnTimeout = null;
+
         function gameOver() {
             currentState = GameState.GAME_OVER;
             
@@ -1763,6 +1882,9 @@
             swipeHint.style.display = 'none';
             missCounter.style.display = 'none';
             
+            // Set game cooldown
+            playerData.lastGame = new Date().toISOString();
+            
             // Add game score to total
             playerData.gamePoints += tokens;
             playerData.totalPoints += tokens;
@@ -1773,14 +1895,73 @@
             document.getElementById('finalCombo').textContent = 'x' + maxCombo;
             document.getElementById('perfectHits').textContent = perfectHits;
             
+            // Update restart button to disabled
+            const restartBtn = document.getElementById('restartBtn');
+            restartBtn.classList.add('disabled');
+            restartBtn.disabled = true;
+            restartBtn.innerHTML = '⏳ Aguarde';
+            
+            // Start cooldown timer display
+            startGameOverCooldownTimer();
+            
+            // Start auto-return countdown
+            startAutoReturnCountdown();
+            
             gameOverScreen.classList.remove('hidden');
         }
 
+        function startGameOverCooldownTimer() {
+            // Clear any existing interval
+            if (gameOverTimerInterval) clearInterval(gameOverTimerInterval);
+            
+            const timerEl = document.getElementById('gameOverTimer');
+            
+            function updateTimer() {
+                const remaining = getGameCooldownRemaining();
+                timerEl.textContent = formatCooldownTime(remaining);
+            }
+            
+            updateTimer();
+            gameOverTimerInterval = setInterval(updateTimer, 1000);
+        }
+
+        function startAutoReturnCountdown() {
+            // Clear any existing intervals/timeouts
+            if (autoReturnInterval) clearInterval(autoReturnInterval);
+            if (autoReturnTimeout) clearTimeout(autoReturnTimeout);
+            
+            let seconds = 10;
+            const secondsEl = document.getElementById('autoReturnSeconds');
+            secondsEl.textContent = seconds;
+            
+            autoReturnInterval = setInterval(() => {
+                seconds--;
+                secondsEl.textContent = seconds;
+                
+                if (seconds <= 0) {
+                    clearInterval(autoReturnInterval);
+                }
+            }, 1000);
+            
+            // Auto return to menu after 10 seconds
+            autoReturnTimeout = setTimeout(() => {
+                if (currentState === GameState.GAME_OVER) {
+                    goToMenu();
+                }
+            }, 10000);
+        }
+
         function goToMenu() {
+            // Clear game over timers
+            if (gameOverTimerInterval) clearInterval(gameOverTimerInterval);
+            if (autoReturnInterval) clearInterval(autoReturnInterval);
+            if (autoReturnTimeout) clearTimeout(autoReturnTimeout);
+            
             currentState = GameState.MENU;
             gameOverScreen.classList.add('hidden');
             menuScreen.classList.remove('hidden');
             updateTotalPointsDisplay();
+            updatePlayButtonState();
         }
 
         function updateHUD() {
@@ -2161,8 +2342,9 @@
 
         // Initialize
         updateTotalPointsDisplay();
+        startPlayButtonUpdater();
         initThree();
         animate();
-    </script>   
+    </script>
 </body>
 </html>
