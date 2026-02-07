@@ -894,17 +894,21 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
+        (function () {
+        "use strict";
+
         // ============= SUPABASE CONFIG (LOVABLE CLOUD) =============
         const SUPABASE_URL = 'https://xjchwkrhsulmdmhhhtfa.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqY2h3a3Joc3VsbWRtaGhodGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxNjYwNzMsImV4cCI6MjA4NTc0MjA3M30.LYfSdw0EsQfbWAiQLhUoxBwLC1IEiR2PLKnqV74Qm1g';
         
-        // Initialize Supabase client
+        // Initialize Supabase client (use local scope to avoid clashing with the global `supabase` SDK object)
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         let cloudReady = false;
         let authUserId = null;
 
         // ============= ANONYMOUS AUTHENTICATION =============
-        async function initializeAuth() {
+        async function initializeAuth(retryCount = 0) {
+            const MAX_RETRIES = 3;
             try {
                 // Check for existing session
                 const { data: { session } } = await supabase.auth.getSession();
@@ -917,7 +921,12 @@
                     // Sign in anonymously
                     const { data, error } = await supabase.auth.signInAnonymously();
                     if (error) {
-                        console.error('Anonymous auth failed:', error);
+                        console.error('Anonymous auth failed:', error.message);
+                        if (retryCount < MAX_RETRIES) {
+                            console.log(`Retrying auth (${retryCount + 1}/${MAX_RETRIES})...`);
+                            await new Promise(r => setTimeout(r, 1000 * (retryCount + 1)));
+                            return initializeAuth(retryCount + 1);
+                        }
                         cloudReady = false;
                     } else {
                         authUserId = data.user.id;
@@ -939,17 +948,45 @@
                         playerData.id = authUserId;
                         localStorage.setItem(STORAGE_KEYS.PLAYER_ID, authUserId);
                         cloudReady = true;
+                        console.log('Auth state changed:', event, authUserId);
                     } else {
                         cloudReady = false;
+                        console.log('Auth state lost:', event);
                     }
                 });
                 
                 // Load existing player data from cloud if available
                 await loadPlayerDataFromCloud();
                 
+                // Clear stale cooldown even if cloud load fails
+                if (!cloudReady) {
+                    // If we can't reach the server, don't let stale localStorage lock the game
+                    const storedLastGame = localStorage.getItem(STORAGE_KEYS.LAST_GAME);
+                    if (storedLastGame) {
+                        const elapsed = Date.now() - new Date(storedLastGame).getTime();
+                        if (elapsed > 8 * 60 * 60 * 1000) {
+                            // Cooldown expired locally, clear it
+                            playerData.lastGame = null;
+                            localStorage.removeItem(STORAGE_KEYS.LAST_GAME);
+                            updatePlayButtonState();
+                            console.log('Cleared expired local cooldown (offline mode)');
+                        }
+                    }
+                }
+                
             } catch (e) {
                 console.error('Auth initialization failed:', e);
                 cloudReady = false;
+                // Even on total failure, don't lock the game with stale localStorage
+                const storedLastGame = localStorage.getItem(STORAGE_KEYS.LAST_GAME);
+                if (storedLastGame) {
+                    const elapsed = Date.now() - new Date(storedLastGame).getTime();
+                    if (elapsed > 8 * 60 * 60 * 1000) {
+                        playerData.lastGame = null;
+                        localStorage.removeItem(STORAGE_KEYS.LAST_GAME);
+                        updatePlayButtonState();
+                    }
+                }
             }
         }
         
@@ -971,10 +1008,14 @@
                     playerData.gamePoints = Math.max(existingPlayer.game_points || 0, playerData.gamePoints);
                     playerData.missionPoints = Math.max(existingPlayer.mission_points || 0, playerData.missionPoints);
                     
-                    // SYNC SERVER-AUTHORITATIVE COOLDOWN
+                    // SYNC SERVER-AUTHORITATIVE COOLDOWN (server is always the source of truth)
                     if (existingPlayer.last_game_at) {
                         playerData.lastGame = existingPlayer.last_game_at;
                         localStorage.setItem(STORAGE_KEYS.LAST_GAME, existingPlayer.last_game_at);
+                    } else {
+                        // Server says no cooldown — clear any stale local cooldown
+                        playerData.lastGame = null;
+                        localStorage.removeItem(STORAGE_KEYS.LAST_GAME);
                     }
                     
                     // Update UI
@@ -984,6 +1025,12 @@
                     updatePlayButtonState();
                     
                     console.log('Player data loaded from cloud');
+                } else {
+                    // No record on server — clear any stale local cooldown
+                    playerData.lastGame = null;
+                    localStorage.removeItem(STORAGE_KEYS.LAST_GAME);
+                    updatePlayButtonState();
+                    console.log('No cloud record found, cleared local cooldown');
                 }
             } catch (e) {
                 console.log('Failed to load player data from cloud:', e);
@@ -2626,6 +2673,7 @@
         startPlayButtonUpdater();
         initThree();
         animate();
+        })();
     </script>
 </body>
 </html>
