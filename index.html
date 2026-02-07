@@ -1,11 +1,10 @@
-A<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RHAP Rhythm Runner</title>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
             margin: 0;
@@ -895,29 +894,104 @@ A<!DOCTYPE html>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // ============= FIREBASE CONFIG =============
-        const firebaseConfig = {
-            apiKey: "AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            authDomain: "rhap-rhythm-runner.firebaseapp.com",
-            databaseURL: "https://rhap-rhythm-runner-default-rtdb.firebaseio.com",
-            projectId: "rhap-rhythm-runner",
-            storageBucket: "rhap-rhythm-runner.appspot.com",
-            messagingSenderId: "123456789",
-            appId: "1:123456789:web:xxxxxxxxxxxxx"
-        };
+        // ============= SUPABASE CONFIG (LOVABLE CLOUD) =============
+        const SUPABASE_URL = 'https://xjchwkrhsulmdmhhhtfa.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqY2h3a3Joc3VsbWRtaGhodGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxNjYwNzMsImV4cCI6MjA4NTc0MjA3M30.LYfSdw0EsQfbWAiQLhUoxBwLC1IEiR2PLKnqV74Qm1g';
+        
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        let cloudReady = false;
+        let authUserId = null;
 
-        // Initialize Firebase (will be replaced with real config)
-        let firebaseApp = null;
-        let database = null;
-        let firebaseReady = false;
-
-        try {
-            firebaseApp = firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-            firebaseReady = true;
-        } catch (e) {
-            console.log('Firebase not configured, using local storage only');
+        // ============= ANONYMOUS AUTHENTICATION =============
+        async function initializeAuth() {
+            try {
+                // Check for existing session
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                if (session?.user) {
+                    authUserId = session.user.id;
+                    cloudReady = true;
+                    console.log('Existing session found:', authUserId);
+                } else {
+                    // Sign in anonymously
+                    const { data, error } = await supabase.auth.signInAnonymously();
+                    if (error) {
+                        console.error('Anonymous auth failed:', error);
+                        cloudReady = false;
+                    } else {
+                        authUserId = data.user.id;
+                        cloudReady = true;
+                        console.log('Anonymous auth successful:', authUserId);
+                    }
+                }
+                
+                // Update playerData.id with the authenticated user ID
+                if (authUserId) {
+                    playerData.id = authUserId;
+                    localStorage.setItem(STORAGE_KEYS.PLAYER_ID, authUserId);
+                }
+                
+                // Listen for auth state changes
+                supabase.auth.onAuthStateChange((event, session) => {
+                    if (session?.user) {
+                        authUserId = session.user.id;
+                        playerData.id = authUserId;
+                        localStorage.setItem(STORAGE_KEYS.PLAYER_ID, authUserId);
+                        cloudReady = true;
+                    } else {
+                        cloudReady = false;
+                    }
+                });
+                
+                // Load existing player data from cloud if available
+                await loadPlayerDataFromCloud();
+                
+            } catch (e) {
+                console.error('Auth initialization failed:', e);
+                cloudReady = false;
+            }
         }
+        
+        // Load player data from cloud on init
+        async function loadPlayerDataFromCloud() {
+            if (!cloudReady || !authUserId) return;
+            
+            try {
+                const { data: existingPlayer } = await supabase
+                    .from('scores')
+                    .select('*')
+                    .eq('player_id', authUserId)
+                    .maybeSingle();
+                
+                if (existingPlayer) {
+                    // Merge cloud data with local data (cloud takes priority)
+                    playerData.name = existingPlayer.player_name || playerData.name;
+                    playerData.totalPoints = Math.max(existingPlayer.total_points || 0, playerData.totalPoints);
+                    playerData.gamePoints = Math.max(existingPlayer.game_points || 0, playerData.gamePoints);
+                    playerData.missionPoints = Math.max(existingPlayer.mission_points || 0, playerData.missionPoints);
+                    
+                    // SYNC SERVER-AUTHORITATIVE COOLDOWN
+                    if (existingPlayer.last_game_at) {
+                        playerData.lastGame = existingPlayer.last_game_at;
+                        localStorage.setItem(STORAGE_KEYS.LAST_GAME, existingPlayer.last_game_at);
+                    }
+                    
+                    // Update UI
+                    const nameInput = document.getElementById('playerNameInput');
+                    if (nameInput) nameInput.value = playerData.name;
+                    updateTotalPointsDisplay();
+                    updatePlayButtonState();
+                    
+                    console.log('Player data loaded from cloud');
+                }
+            } catch (e) {
+                console.log('Failed to load player data from cloud:', e);
+            }
+        }
+        
+        // Initialize auth on page load
+        initializeAuth();
 
         // ============= LOCAL STORAGE KEYS =============
         const STORAGE_KEYS = {
@@ -937,7 +1011,7 @@ A<!DOCTYPE html>
 
         // ============= PLAYER DATA =============
         let playerData = {
-            id: localStorage.getItem(STORAGE_KEYS.PLAYER_ID) || generatePlayerId(),
+            id: localStorage.getItem(STORAGE_KEYS.PLAYER_ID) || null,
             name: localStorage.getItem(STORAGE_KEYS.PLAYER_NAME) || '',
             totalPoints: parseInt(localStorage.getItem(STORAGE_KEYS.TOTAL_POINTS)) || 0,
             gamePoints: parseInt(localStorage.getItem(STORAGE_KEYS.GAME_POINTS)) || 0,
@@ -948,10 +1022,31 @@ A<!DOCTYPE html>
             lastGame: localStorage.getItem(STORAGE_KEYS.LAST_GAME) || null
         };
 
-        function generatePlayerId() {
-            const id = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem(STORAGE_KEYS.PLAYER_ID, id);
-            return id;
+        // ============= SECURITY: HTML ESCAPE FUNCTION =============
+        function escapeHtml(unsafe) {
+            if (typeof unsafe !== 'string') return '';
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // ============= SECURITY: PLAYER NAME VALIDATION =============
+        function validatePlayerName(name) {
+            if (typeof name !== 'string') return false;
+            const trimmed = name.trim();
+            if (trimmed.length === 0 || trimmed.length > 20) return false;
+            // Only allow alphanumeric, spaces, dots, underscores, hyphens
+            if (!/^[a-zA-Z0-9 ._-]+$/.test(trimmed)) return false;
+            return true;
+        }
+
+        function sanitizePlayerName(name) {
+            if (typeof name !== 'string') return '';
+            // Remove any characters that aren't alphanumeric, space, dot, underscore, hyphen
+            return name.replace(/[^a-zA-Z0-9 ._-]/g, '').substring(0, 20).trim();
         }
 
         function savePlayerData() {
@@ -965,7 +1060,7 @@ A<!DOCTYPE html>
             localStorage.setItem(STORAGE_KEYS.LAST_GAME, playerData.lastGame || '');
             
             updateTotalPointsDisplay();
-            syncToFirebase();
+            syncToCloud();
         }
 
         // ============= GAME COOLDOWN FUNCTIONS =============
@@ -985,16 +1080,16 @@ A<!DOCTYPE html>
         }
 
         function canPlayGame() {
-            return getGameCooldownRemaining() === 0;
+            return getGameCooldownRemaining() <= 0;
         }
 
         function updatePlayButtonState() {
             const startBtn = document.getElementById('startBtn');
-            const cooldownRemaining = getGameCooldownRemaining();
+            const remaining = getGameCooldownRemaining();
             
-            if (cooldownRemaining > 0) {
+            if (remaining > 0) {
                 startBtn.classList.add('disabled');
-                startBtn.innerHTML = `⏳ ${formatCooldownTime(cooldownRemaining)}`;
+                startBtn.innerHTML = `⏳ ${formatCooldownTime(remaining)}`;
                 startBtn.disabled = true;
             } else {
                 startBtn.classList.remove('disabled');
@@ -1015,20 +1110,57 @@ A<!DOCTYPE html>
             updatePlayButtonState();
         }
 
-        function syncToFirebase() {
-            if (!firebaseReady || !playerData.name) return;
+        // ============= SYNC TO LOVABLE CLOUD (SUPABASE) =============
+        async function syncToCloud(gameStats = null) {
+            if (!cloudReady || !playerData.name || !authUserId) return;
             
             try {
-                database.ref('players/' + playerData.id).set({
-                    name: playerData.name,
-                    totalPoints: playerData.totalPoints,
-                    gamePoints: playerData.gamePoints,
-                    missionPoints: playerData.missionPoints,
-                    lastUpdate: Date.now()
-                });
+                // First check existing player to compare scores
+                const { data: existingPlayer } = await supabase
+                    .from('scores')
+                    .select('max_combo, perfect_hits, score')
+                    .eq('player_id', authUserId)
+                    .maybeSingle();
+                
+                // Prepare upsert data (mission_points and total_points are server-authoritative, not included here)
+                const upsertData = {
+                    player_id: authUserId,
+                    player_name: playerData.name,
+                    game_points: playerData.gamePoints,
+                    score: gameStats?.score || existingPlayer?.score || 0,
+                    max_combo: gameStats?.maxCombo || existingPlayer?.max_combo || 1,
+                    perfect_hits: gameStats?.perfectHits || existingPlayer?.perfect_hits || 0
+                };
+                
+                // If game stats provided, only update if better than existing
+                if (gameStats && existingPlayer) {
+                    upsertData.score = Math.max(gameStats.score || 0, existingPlayer.score || 0);
+                    upsertData.max_combo = Math.max(gameStats.maxCombo || 0, existingPlayer.max_combo || 0);
+                    upsertData.perfect_hits = Math.max(gameStats.perfectHits || 0, existingPlayer.perfect_hits || 0);
+                }
+                
+                // Use upsert with the unique constraint on player_id
+                const { error } = await supabase
+                    .from('scores')
+                    .upsert(upsertData, { onConflict: 'player_id' });
+                
+                if (error) {
+                    console.log('Cloud sync failed:', error);
+                } else {
+                    console.log('Cloud sync successful');
+                }
             } catch (e) {
-                console.log('Firebase sync failed:', e);
+                console.log('Cloud sync failed:', e);
             }
+        }
+        
+        // Save game result with detailed stats
+        function saveGameResult(gameScore, gameMaxCombo, gamePerfectHits) {
+            syncToCloud({
+                score: gameScore,
+                maxCombo: gameMaxCombo,
+                perfectHits: gamePerfectHits
+            });
         }
 
         function updateTotalPointsDisplay() {
@@ -1176,27 +1308,81 @@ A<!DOCTYPE html>
             return Math.max(0, mission.cooldown - (Date.now() - lastTime));
         }
 
-        function completeMission(mission) {
+        async function completeMission(mission) {
             if (!canCompleteMission(mission)) return false;
             
-            // Open URL
+            // Open URL first
             window.open(mission.url, '_blank');
             
-            // Mark as completed
-            if (mission.type === 'once') {
-                playerData.missionsCompleted[mission.id] = true;
-            } else if (mission.type === 'daily') {
-                playerData.missionsCooldowns[mission.id] = Date.now();
+            // Get current session for auth
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError || !session) {
+                console.error('No auth session for mission completion');
+                return false;
             }
             
-            // Add points
-            playerData.missionPoints += mission.points;
-            playerData.totalPoints += mission.points;
-            savePlayerData();
-            
-            // Update UI
-            updateMissionsModal();
-            return true;
+            try {
+                // Call edge function to complete mission server-side
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/complete-mission`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({ mission_id: mission.id }),
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    if (result.code === 'ALREADY_COMPLETED') {
+                        // Already completed on server, sync local state
+                        playerData.missionsCompleted[mission.id] = true;
+                        savePlayerData();
+                    } else if (result.code === 'ON_COOLDOWN') {
+                        // On cooldown, sync local state
+                        const cooldownEnd = Date.now() - (mission.cooldown - result.cooldown_remaining);
+                        playerData.missionsCooldowns[mission.id] = cooldownEnd;
+                        savePlayerData();
+                    }
+                    console.log('Mission completion failed:', result.error);
+                    updateMissionsModal();
+                    return false;
+                }
+                
+                // Success! Update local state to reflect server state
+                if (mission.type === 'once') {
+                    playerData.missionsCompleted[mission.id] = true;
+                } else if (mission.type === 'daily') {
+                    playerData.missionsCooldowns[mission.id] = Date.now();
+                }
+                
+                // Fetch authoritative points from server (prevents client manipulation)
+                const { data: updatedScore } = await supabase
+                    .from('scores')
+                    .select('mission_points, total_points')
+                    .eq('player_id', authUserId)
+                    .maybeSingle();
+                
+                if (updatedScore) {
+                    playerData.missionPoints = updatedScore.mission_points;
+                    playerData.totalPoints = updatedScore.total_points;
+                    localStorage.setItem(STORAGE_KEYS.MISSION_POINTS, updatedScore.mission_points);
+                    localStorage.setItem(STORAGE_KEYS.TOTAL_POINTS, updatedScore.total_points);
+                }
+                
+                savePlayerData();
+                
+                // Update UI
+                updateMissionsModal();
+                console.log(`Mission ${mission.id} completed! Points awarded: ${result.points_awarded}`);
+                return true;
+                
+            } catch (error) {
+                console.error('Error completing mission:', error);
+                updateMissionsModal();
+                return false;
+            }
         }
 
         function updateMissionsModal() {
@@ -1241,7 +1427,7 @@ A<!DOCTYPE html>
             });
         }
 
-        // ============= RANKING SYSTEM =============
+        // ============= RANKING SYSTEM (LOVABLE CLOUD) =============
         async function loadRanking() {
             const list = document.getElementById('rankingList');
             const yourRank = document.getElementById('yourRankDisplay');
@@ -1254,30 +1440,32 @@ A<!DOCTYPE html>
             `;
             
             try {
-                if (firebaseReady) {
-                    const snapshot = await database.ref('players').orderByChild('totalPoints').limitToLast(100).once('value');
-                    const players = [];
-                    snapshot.forEach(child => {
-                        players.push({ id: child.key, ...child.val() });
-                    });
-                    
-                    // Sort descending
-                    players.sort((a, b) => b.totalPoints - a.totalPoints);
-                    
+                // Fetch ranking from Supabase
+                const { data: players, error } = await supabase
+                    .from('scores')
+                    .select('player_id, player_name, total_points')
+                    .order('total_points', { ascending: false })
+                    .limit(100);
+                
+                if (error) throw error;
+                
+                if (players && players.length > 0) {
                     // Find user rank
-                    const userIndex = players.findIndex(p => p.id === playerData.id);
+                    const userIndex = players.findIndex(p => p.player_id === playerData.id);
                     yourRank.textContent = userIndex >= 0 ? `#${userIndex + 1}` : '#-';
                     
-                    renderRankingList(players);
+                    // Transform data for renderRankingList
+                    const formattedPlayers = players.map(p => ({
+                        id: p.player_id,
+                        name: p.player_name,
+                        totalPoints: p.total_points
+                    }));
+                    
+                    renderRankingList(formattedPlayers);
                 } else {
-                    // Fallback to local data only
-                    const localPlayers = [{ 
-                        id: playerData.id, 
-                        name: playerData.name || 'Você', 
-                        totalPoints: playerData.totalPoints 
-                    }];
-                    yourRank.textContent = '#1';
-                    renderRankingList(localPlayers);
+                    // No players yet
+                    yourRank.textContent = '#-';
+                    renderRankingList([]);
                 }
             } catch (e) {
                 console.log('Ranking load failed:', e);
@@ -1309,11 +1497,13 @@ A<!DOCTYPE html>
                 else if (position === 3) posClass += ' bronze';
                 
                 const isCurrentUser = player.id === playerData.id;
+                // SECURITY: Escape player name to prevent XSS attacks
+                const safeName = escapeHtml(player.name) || 'Anônimo';
                 
                 return `
                     <div class="ranking-item ${isCurrentUser ? 'current-user' : ''}">
                         <div class="${posClass}">${position}</div>
-                        <div class="ranking-name">${player.name || 'Anônimo'}</div>
+                        <div class="ranking-name">${safeName}</div>
                         <div class="ranking-score">${player.totalPoints?.toLocaleString() || 0}</div>
                     </div>
                 `;
@@ -1359,12 +1549,26 @@ A<!DOCTYPE html>
             });
         });
 
-        // Player name input
+        // Player name input with validation
         const nameInput = document.getElementById('playerNameInput');
         nameInput.value = playerData.name;
+        nameInput.setAttribute('pattern', '[a-zA-Z0-9 ._-]+');
+        nameInput.setAttribute('title', 'Use apenas letras, números, espaços, pontos, sublinhados e hífens');
         nameInput.addEventListener('input', (e) => {
-            playerData.name = e.target.value.trim();
-            savePlayerData();
+            // Sanitize input to only allow valid characters
+            const sanitized = sanitizePlayerName(e.target.value);
+            if (e.target.value !== sanitized) {
+                e.target.value = sanitized;
+            }
+            if (validatePlayerName(sanitized)) {
+                playerData.name = sanitized;
+                savePlayerData();
+                e.target.setCustomValidity('');
+            } else if (sanitized.length === 0) {
+                e.target.setCustomValidity('');
+            } else {
+                e.target.setCustomValidity('Use apenas letras, números e ._-');
+            }
         });
 
         // ============= GAME STATE =============
@@ -1388,6 +1592,12 @@ A<!DOCTYPE html>
         let beatInterval = 60000 / bpm;
         let missedTokens = 0;
         let maxMisses = 10;
+        
+        // Progressive speed system
+        let baseTokenSpeed = 20;
+        let currentTokenSpeed = baseTokenSpeed;
+        const maxTokenSpeed = 35; // Maximum speed cap
+        const speedIncreaseRate = 0.08; // Speed increase per second (moderate)
 
         // Input state
         let isLeftPressed = false;
@@ -1817,10 +2027,9 @@ A<!DOCTYPE html>
             osc.stop(now + 0.2);
         }
 
-        function startGame() {
-            // Check cooldown before starting
+        async function startGame() {
+            // First, check client-side cooldown for immediate UI feedback
             if (!canPlayGame()) {
-                // Show alert with remaining time
                 const remaining = getGameCooldownRemaining();
                 alert(`Volte em ${formatCooldownTime(remaining)} para jogar novamente!`);
                 return;
@@ -1830,6 +2039,57 @@ A<!DOCTYPE html>
                 playerData.name = 'Jogador_' + Math.floor(Math.random() * 10000);
                 nameInput.value = playerData.name;
                 savePlayerData();
+            }
+            
+            // SERVER-SIDE COOLDOWN VALIDATION (prevents bypass)
+            if (cloudReady && authUserId) {
+                try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!session?.access_token) {
+                        console.error('No auth session for game start');
+                        alert('Erro de autenticação. Tente recarregar a página.');
+                        return;
+                    }
+                    
+                    const response = await fetch(`${SUPABASE_URL}/functions/v1/start-game`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (!response.ok) {
+                        if (response.status === 429) {
+                            // Cooldown enforced by server - sync local state
+                            if (result.last_game_at) {
+                                playerData.lastGame = result.last_game_at;
+                                localStorage.setItem(STORAGE_KEYS.LAST_GAME, result.last_game_at);
+                            }
+                            const serverRemaining = result.remaining || getGameCooldownRemaining();
+                            alert(`Volte em ${formatCooldownTime(serverRemaining)} para jogar novamente!`);
+                            updatePlayButtonState();
+                            return;
+                        }
+                        console.error('Start game error:', result.error);
+                        alert('Erro ao iniciar o jogo. Tente novamente.');
+                        return;
+                    }
+                    
+                    // Server approved - update local cooldown state
+                    if (result.last_game_at) {
+                        playerData.lastGame = result.last_game_at;
+                        localStorage.setItem(STORAGE_KEYS.LAST_GAME, result.last_game_at);
+                    }
+                    
+                    console.log('Game start approved by server');
+                } catch (error) {
+                    console.error('Failed to validate game start:', error);
+                    // On network error, allow game but warn user
+                    alert('Aviso: Não foi possível validar com o servidor. O jogo pode não ser salvo.');
+                }
             }
             
             currentState = GameState.PLAYING;
@@ -1843,6 +2103,7 @@ A<!DOCTYPE html>
             targetPlayerX = lanes[playerLane];
             gameTime = 0;
             lastBeatTime = 0;
+            currentTokenSpeed = baseTokenSpeed; // Reset speed on new game
 
             activeTokens.forEach(t => t.visible = false);
             activeTokens = [];
@@ -1889,6 +2150,9 @@ A<!DOCTYPE html>
             playerData.gamePoints += tokens;
             playerData.totalPoints += tokens;
             savePlayerData();
+            
+            // Save game result with detailed stats to Cloud
+            saveGameResult(tokens, maxCombo, perfectHits);
             
             document.getElementById('finalScore').textContent = tokens.toLocaleString();
             document.getElementById('finalTokens').textContent = tokens;
@@ -2186,6 +2450,13 @@ A<!DOCTYPE html>
             if (currentState !== GameState.PLAYING) return;
 
             gameTime += delta * 1000;
+            
+            // Progressive speed increase (moderate)
+            const elapsedSeconds = gameTime / 1000;
+            currentTokenSpeed = Math.min(
+                baseTokenSpeed + (elapsedSeconds * speedIncreaseRate),
+                maxTokenSpeed
+            );
 
             player.position.x += (targetPlayerX - player.position.x) * 0.2;
             player.position.y = 0.5 + Math.sin(gameTime * 0.005) * 0.1;
@@ -2204,7 +2475,7 @@ A<!DOCTYPE html>
 
             for (let i = activeTokens.length - 1; i >= 0; i--) {
                 const token = activeTokens[i];
-                token.position.z += delta * 20;
+                token.position.z += delta * currentTokenSpeed;
 
                 token.rotation.y += delta * 2;
                 token.rotation.x += delta;
@@ -2333,9 +2604,19 @@ A<!DOCTYPE html>
             if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
                 const tgUser = tg.initDataUnsafe.user;
                 if (!playerData.name && tgUser.first_name) {
-                    playerData.name = tgUser.first_name;
-                    nameInput.value = playerData.name;
-                    savePlayerData();
+                    // Validate and sanitize Telegram name like other inputs
+                    const sanitizedName = sanitizePlayerName(tgUser.first_name);
+                    if (validatePlayerName(sanitizedName)) {
+                        playerData.name = sanitizedName;
+                        nameInput.value = playerData.name;
+                        savePlayerData();
+                    } else {
+                        // Fallback to generated name if Telegram name is invalid
+                        playerData.name = 'Player_' + Math.floor(Math.random() * 10000);
+                        nameInput.value = playerData.name;
+                        savePlayerData();
+                        console.log('Telegram name invalid, using generated name');
+                    }
                 }
             }
         }
